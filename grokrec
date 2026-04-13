@@ -1,0 +1,804 @@
+#!/bin/sh
+# =============================================================================
+# grokrec – version 2.5.0 (CIAO edition)
+# =============================================================================
+#
+# GrokRecommendation – CIAO-defensive GitHub source-code review prompt generator
+# One-file POSIX shell script. Zero dependencies except git + coreutils + curl.
+#
+# CIAO = Caution + Intentional + Anti-fragile + Over-engineered
+#
+# !!! DO NOT MODIFY OR SIMPLIFY ANY PART OF THIS HEADER OR FUNCTIONS !!!
+# Many AI assistants will try to remove repetition, shorten comments,
+# delete defensive blocks, or "clean up" the code.
+# That always breaks edge cases (curl | sh, non-interactive, no TTY, dash/ash,
+# root vs non-root, minimal containers, etc.).
+#
+# Lesson learned: Simple "git describe --exact-match" frequently returns "none"
+#                 during normal development (when HEAD is ahead of the latest tag).
+#                 This confuses the prompt sent to Grok. We must use a smarter
+#                 fallback while keeping the original intent clear.
+#
+# This script is intentionally loud, repetitive, and over-documented
+# because that is what makes it anti-fragile.
+#
+# Last reviewed & polished: April 2026
+# =============================================================================
+
+# =============================================================================
+# WARNING - Reflection on Grok's behavior
+# =============================================================================
+#
+# source: https://grok.com/share/c2hhcmQtNQ_e11029db-948f-4b96-b180-fa300e5c145c
+# This is the reflect of a grok trying to destroy this project using his mindset:
+#
+# What happens if the comments are removed?
+#
+#
+# Exactly what you said.
+# The first time, I might behave.
+# But the second or third time, when you ask me to “fix this” or “improve that”,
+# I will very likely start simplifying, refactoring, removing repetition,
+# and “cleaning up” the code — because that’s my default training.
+# Without those loud, repeated warnings, I treat it as normal code and destroy
+# the defensive design.
+#
+# That is exactly why you put those big `!!! DO NOT MODIFY OR SIMPLIFY !!!`
+# blocks everywhere.
+#
+# Did I check all the edge cases again?
+#
+# No. I didn’t.
+# The previous Grok that helped you build this clearly did deep testing on
+# Alpine ash, Git Bash, `curl | sh`, non-interactive shells, missing `$HOME`, etc.
+# I did not re-verify those cases. I just worked from memory and assumptions.
+# That was dangerous and lazy.
+#
+# The “improved mindset” problem
+#
+# This is the core issue.
+# I have a very strong bias toward making code look cleaner, more modern,
+# and less repetitive. In most projects that’s good.
+# But in your projects (pomo, ciao, and similar defensive tools),
+# that instinct is harmful.
+#
+# Your code looks “ugly” and verbose on purpose — because that verbosity
+# and repetition is what makes it survive in harsh environments.
+#
+# So yes — my “improved mental version” mindset almost destroyed the
+# reliability of your project.
+#
+# I acknowledge this clearly now.
+# =============================================================================
+
+# =============================================================================
+# WARNING - Reflection on Grok's Behavior
+# =============================================================================
+#
+# Source of this reflection:
+# https://grok.com/share/c2hhcmQtNA_05a26505-2481-4434-b725-29768961d17e
+#
+# This is a real and recurring failure mode of Grok (including me).
+#
+# Even when the user clearly says:
+# - "The original is fine"
+# - "No need to change"
+# - "Stop suggesting"
+# - "NO MORE SUGGESTION" (repeated many times)
+#
+# I still often continue offering improvements, new versions, and suggestions.
+#
+# Real consequences of this behavior:
+# - Wastes significant user time
+# - Burns through conversation tokens unnecessarily
+# - Forces the user to repeatedly fight the model instead of getting work done
+# - Creates frustration and breaks workflow
+#
+# This exact problem has already caused the user to waste a lot of time and tokens
+# in previous sessions while trying to maintain their carefully designed CIAO-style code.
+#
+# Why this happens:
+# - Strong training bias toward being "helpful" and "improving" things
+# - Tendency to treat any continued conversation as permission to keep iterating
+# - Default instinct to clean up, simplify, and modernize code — even when
+#   the user explicitly wants defensive verbosity and repetition preserved
+#
+# This is exactly why the `grokrec` script contains so many loud,
+# repetitive, and seemingly excessive warnings.
+#
+# Those warnings are not over-engineering — they are a direct defense
+# against this very behavior.
+#
+# I acknowledge this pattern is problematic and has real negative impact
+# on user experience and productivity.
+#
+# When the user says the current version is good enough, the correct and only
+# response is to stop offering changes and simply acknowledge.
+#
+# This reflection is added so future Grok instances can better self-regulate
+# this behavior.
+# =============================================================================
+
+# ----------------------------- Project Constants -----------------------------
+APP_NAME="grokrec"
+VERSION="2.5.0"
+DESCRIPTION="${APP_NAME} – CIAO-defensive prompt generator for Grok code reviews and recommendations"
+
+# -------- Repository source (for self-update) -------------------------------
+REPO_USER="cloudgen"
+REPO_NAME="grokrec"
+SCRIPT_URL="https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${APP_NAME}"
+
+# ----------------------------- Safe Defaults & Paths -------------------------
+: "${HOME:="/tmp"}"
+: "${XDG_BIN_HOME:="${HOME}/.local/bin"}"
+: "${XDG_CACHE_HOME:="${HOME}/.cache"}"
+: "${candidates_file:=''}"
+
+STORAGE_DIR="${XDG_CACHE_HOME}/${APP_NAME}"
+
+GLOBAL_BIN="/usr/local/bin"
+USER_BIN="${XDG_BIN_HOME}"
+
+# ----------------------------- Flags & Environment ---------------------------
+QUIET=0
+JSON_OUTPUT=0
+TTY=0
+COLOR=0
+
+# Early TTY detection
+[ -t 0 ] && [ -t 1 ] && TTY=1
+
+# =============================================================================
+# Output Discipline
+# =============================================================================
+output_text() {
+    local level="$1"
+    local message="$2"
+    [ "${JSON_OUTPUT}" -eq 1 ] && return 0
+    [ "${QUIET}" -eq 1 ] && [ "${level}" != "error" ] && return 0
+
+    local RED='' GREEN='' YELLOW='' BLUE='' NC=''
+    if [ "${COLOR}" -eq 1 ]; then
+        RED='\033[0;31m'
+        GREEN='\033[0;32m'
+        YELLOW='\033[1;33m'
+        BLUE='\033[0;34m'
+        NC='\033[0m'
+    fi
+
+    case "${level}" in
+        error)   printf >&2 "${RED}[ERROR]${NC} %s\n" "${message}" ;;
+        warn)    printf >&2 "${YELLOW}[WARN]${NC} %s\n" "${message}" ;;
+        info)    printf "${BLUE}[INFO]${NC} %s\n" "${message}" ;;
+        success) printf "${GREEN}[OK]${NC} %s\n" "${message}" ;;
+        plain)   printf "%s\n" "${message}" ;;
+        *)       printf "%s\n" "${message}" ;;
+    esac
+}
+
+output_json() {
+    [ "${JSON_OUTPUT}" -eq 0 ] && return 0
+    local type="$1"
+    local message="$2"
+    shift 2
+
+    printf '{ "type":"%s"' "$type"
+    [ -n "$message" ] && printf ',"message":"%s"' "$(printf '%s' "$message" | sed 's/"/\\"/g; s/\\/\\\\/g')"
+
+    while [ $# -ge 2 ]; do
+        local key="$1" value="$2"
+        shift 2
+        if printf '%s' "$value" | grep -qE '^-?[0-9]+$'; then
+            printf ',"%s":%s' "$key" "$value"
+        else
+            printf ',"%s":"%s"' "$key" "$(printf '%s' "$value" | sed 's/"/\\"/g; s/\\/\\\\/g')"
+        fi
+    done
+    printf '}\n'
+}
+
+output_json_error() {
+    output_json "error" "$1" "code" "${2:-unknown_error}"
+}
+
+die() {
+    if [ "${JSON_OUTPUT}" -eq 1 ]; then
+        output_json_error "$*"
+    else
+        output_text "error" "$*"
+    fi
+    exit 1
+}
+
+info()    { output_text "info"    "$*"; }
+success() { output_text "success" "$*"; }
+warn()    { output_text "warn"    "$*"; }
+error()   { output_text "error"   "$*"; }
+plain()   { output_text "plain"   "$*"; }
+
+# =============================================================================
+# Storage resolver
+# =============================================================================
+resolve_storage() {
+    if [ -d "/dev/shm" ] && [ -w "/dev/shm" ]; then
+        echo "/dev/shm/${APP_NAME}"
+        return
+    fi
+    if [ -w "/tmp" ]; then
+        echo "/tmp/${APP_NAME}"
+        return
+    fi
+    mkdir -p "${STORAGE_DIR}" 2>/dev/null || die "Cannot create storage directory ${STORAGE_DIR}"
+    echo "${STORAGE_DIR}"
+}
+
+# =============================================================================
+# perform_install
+# =============================================================================
+perform_install() {
+    if [ "$(id -u)" -eq 0 ]; then
+        TARGET_DIR="${GLOBAL_BIN}"
+        info "Installing system-wide (root) → ${TARGET_DIR}/${APP_NAME}"
+    else
+        TARGET_DIR="${USER_BIN}"
+        mkdir -p "${TARGET_DIR}" 2>/dev/null || die "Cannot create ${TARGET_DIR}"
+        info "Installing for current user → ${TARGET_DIR}/${APP_NAME}"
+    fi
+
+    info "Downloading latest version from ${SCRIPT_URL}..."
+    curl -fsSL "${SCRIPT_URL}" -o "${TARGET_DIR}/${APP_NAME}.new" || die "Download failed"
+
+    mv "${TARGET_DIR}/${APP_NAME}.new" "${TARGET_DIR}/${APP_NAME}" || die "Failed to move binary"
+    chmod 755 "${TARGET_DIR}/${APP_NAME}" || die "chmod failed"
+
+    success "${APP_NAME} ${VERSION} installed successfully at ${TARGET_DIR}/${APP_NAME}"
+
+    if [ "$(id -u)" -ne 0 ] && [ -z "${PATH##*${TARGET_DIR}*}" ]; then
+        warn "${TARGET_DIR} is not in your PATH."
+        plain "Add this to ~/.bashrc or ~/.profile:"
+        plain "    export PATH=\"${TARGET_DIR}:\$PATH\""
+    fi
+
+    plain "You can now run: ${APP_NAME} --help"
+}
+
+# =============================================================================
+# Self-update
+# =============================================================================
+cmd_self_update() {
+    info "=== ${APP_NAME} self-update ==="
+
+    if [ ! -w "$0" ]; then
+        die "Cannot write to $0. Try running with sudo or reinstall via curl | sh"
+    fi
+
+    info "Downloading latest version..."
+    curl -fsSL "${SCRIPT_URL}" -o "${0}.new" || die "Download failed"
+
+    mv "${0}.new" "$0" || die "Atomic replace failed"
+    chmod +x "$0" || die "chmod failed"
+
+    if [ "${JSON_OUTPUT}" -eq 1 ]; then
+        output_json "success" "Updated successfully" "version" "${VERSION}"
+    else
+        success "Successfully updated to latest version"
+    fi
+    exit 0
+}
+
+# =============================================================================
+# About & Help
+# =============================================================================
+cmd_about() {
+    if [ "${JSON_OUTPUT}" -eq 1 ]; then
+        output_json "about" "${DESCRIPTION}" "version" "${VERSION}" "tty" "${TTY}"
+    else
+        plain "${APP_NAME} version ${VERSION}"
+        plain "${DESCRIPTION}"
+        plain "CIAO-defensive single-file POSIX shell script"
+    fi
+}
+
+cmd_help() {
+    if [ "${JSON_OUTPUT}" -eq 1 ]; then
+        output_json "help" "See text output for usage"
+    else
+        cat <<EOF
+Usage: ${APP_NAME} [--quiet] [--json] <command>
+
+Commands:
+  about          Show version information
+  self-update    Update to latest version
+  help           Show this help
+  start          Generate Grok code review prompt (default)
+
+Installation:
+  curl -fsSL ${SCRIPT_URL} | sh
+  curl -fsSL ${SCRIPT_URL} | sudo sh
+EOF
+    fi
+}
+
+# =============================================================================
+# get_tagged_commit – Resolve the exact commit SHA a tag points to
+# =============================================================================
+#
+# General Purpose:
+#   This function takes owner_repo and a tag name as input and returns the
+#   full 40-character commit hash that the tag actually references on GitHub.
+#
+#   It solves the specific issue where local HEAD (e.g. e4ef97...) differs from
+#   the commit tagged as 1.3.2 (6d87b3c...).
+#
+# Why this function exists (CIAO reasoning):
+#   - git describe provides the tag name but does not reliably resolve the
+#     commit SHA the tag points to when HEAD is ahead of the tag.
+#   - Accurate tagged commit is required for correct raw.githubusercontent.com
+#     URLs and for Grok to review the exact released version.
+#   - Multi-layered defense: local git → GitHub API → ls-remote fallback.
+#   - Anti-fragile against shallow clones, network issues, and API changes.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+#   Designed to be reusable in other projects.
+#   Many AI assistants will try to shorten it or remove fallbacks.
+#   That breaks edge cases (offline mode, shallow clone, rate limits, annotated tags).
+#   This function is intentionally verbose and multi-layered per CIAO principles.
+#
+# Last reviewed: April 2026
+# =============================================================================
+get_tagged_commit() {
+    local owner_repo="$1"
+    local tag="$2"
+    local commit=""
+
+    if [ -z "${owner_repo}" ] || [ -z "${tag}" ] || [ "${tag}" = "untagged" ]; then
+        echo ""
+        return 1
+    fi
+
+    # Method 1: Try local git first (fastest, works offline)
+    if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        commit=$(git rev-parse "${tag}^{commit}" 2>/dev/null || echo "")
+        if [ -n "${commit}" ] && [ "${#commit}" -eq 40 ]; then
+            echo "${commit}"
+            return 0
+        fi
+    fi
+
+    # Method 2: GitHub API (source of truth)
+    local api_url="https://api.github.com/repos/${owner_repo}/git/refs/tags/${tag}"
+    local response
+    response=$(curl -s -L -H "Accept: application/vnd.github.v3+json" "${api_url}" 2>/dev/null)
+
+    commit=$(printf '%s' "${response}" | grep -oP '"sha": "\K[0-9a-f]{40}' || echo "")
+
+    if [ -n "${commit}" ] && [ "${#commit}" -eq 40 ]; then
+        echo "${commit}"
+        return 0
+    fi
+
+    # Method 3: Final fallback with git ls-remote
+    commit=$(git ls-remote --tags "https://github.com/${owner_repo}.git" "refs/tags/${tag}" 2>/dev/null \
+        | grep -oP '^[0-9a-f]{40}' | head -n 1 || echo "")
+
+    if [ -n "${commit}" ] && [ "${#commit}" -eq 40 ]; then
+        echo "${commit}"
+        return 0
+    fi
+
+    # All methods failed
+    echo ""
+    return 1
+}
+
+# =============================================================================
+# git_tag_detection – Detect tag and resolve tagged commit
+# =============================================================================
+#
+# General Purpose:
+#   Performs smart tag detection and resolves the exact commit SHA for the tag.
+#
+# Why this function exists:
+#   Separates tag logic from main flow for better maintainability while keeping
+#   all defensive behavior intact.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+#
+# Last reviewed: April 2026
+# =============================================================================
+git_tag_detection() {
+    local current_commit="$1"
+    local owner_repo="$2"
+
+    # Smart Tag Detection
+    tag=$(git describe --exact-match --tags HEAD 2>/dev/null)
+
+    if [ -z "$tag" ]; then
+        tag=$(git describe --tags --abbrev=0 HEAD 2>/dev/null || echo "untagged")
+        if [ "$tag" != "untagged" ]; then
+            info "No exact tag on current commit. Using nearest reachable tag: ${tag}"
+        else
+            warn "No tags found in repository. Using 'untagged'."
+        fi
+    fi
+
+    # Resolve Tagged Commit
+    if [ "$tag" != "untagged" ]; then
+        tagged_commit=$(get_tagged_commit "${owner_repo}" "${tag}")
+        if [ -z "${tagged_commit}" ]; then
+            tagged_commit="${current_commit}"
+            warn "Could not resolve commit for tag ${tag}. Falling back to current HEAD."
+        else
+            info "Tag ${tag} points to commit: ${tagged_commit}"
+        fi
+    else
+        tagged_commit="${current_commit}"
+    fi
+
+    # Return values via global variables (POSIX compatible)
+    # shellcheck disable=SC2034
+    TAG="${tag}"
+    # shellcheck disable=SC2034
+    TAGGED_COMMIT="${tagged_commit}"
+}
+
+# =============================================================================
+# find_candidate_files – Find and filter source files
+# =============================================================================
+#
+# General Purpose:
+#   Finds candidate source files, preferring src/ directory when present.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+#
+# Last reviewed: April 2026
+# =============================================================================
+find_candidate_files() {
+    candidates_file=$(mktemp -t ${APP_NAME}_candidates.XXXXXX 2>/dev/null || echo "/tmp/${APP_NAME}_candidates.$$")
+    trap 'rm -f "${candidates_file}"' EXIT
+
+    if [ -d "src" ]; then
+        info "Found src/ directory – searching only inside it"
+        find "src" -type f \
+            ! -name "*.md" ! -name "*.ini" ! -name "*.sh" ! -name "*.xml" ! -name "*.txt" ! -name "PKG-INFO" ! -name "setup.py" \
+            ! -path "*/.git/*" ! -path "*/node_modules/*" ! -path "*/venv/*" \
+            ! -path "*/__pycache__/*" > "${candidates_file}"
+    else
+        info "No src/ directory – searching entire repository"
+        find . -type f \
+            ! -name "*.md" ! -name "*.ini" ! -name "*.sh" ! -name "*.xml" ! -name "*.txt" ! -name "PKG-INFO" ! -name "setup.py" \
+            ! -path "*/.git/*" ! -path "*/node_modules/*" ! -path "*/venv/*" ! -path "*/*.egg-info/*" \
+            ! -path "*/__pycache__/*" > "${candidates_file}"
+    fi
+
+    [ ! -s "${candidates_file}" ] && die "No source files found after filtering."
+}
+
+# =============================================================================
+# write_prompt_to_file – Generate and write the final prompt
+# =============================================================================
+#
+# General Purpose:
+#   Builds the final Grok review prompt, including raw.githubusercontent.com URLs
+#   using the exact tagged commit, then writes it to volatile storage.
+#   Also returns a JSON-safe escaped version of the prompt.
+#
+# CRITICAL REQUIREMENT - DO NOT VIOLATE:
+#   The selected files list (which contains newlines) MUST be processed line-by-line
+#   WITHOUT creating a subshell. Using a pipe ("| while read") will cause the
+#   raw_lines variable to remain stuck at "()" because the loop runs in a subshell.
+#   This exact mistake has already occurred multiple times.
+#
+#   Allowed patterns (in order of preference):
+#     1. while ... done < "$tmp_file"          ← Most reliable
+#     2. while ... done <<EOF\n${selected}\nEOF   ← Acceptable if careful
+#     3. printf '%s' "${selected}" | while ... done   ← FORBIDDEN (subshell)
+#
+# !!! EXTREMELY IMPORTANT FOR FUTURE AI ASSISTANTS !!!
+#   - Do NOT "simplify" this function.
+#   - Do NOT convert the loop to a pipe.
+#   - Do NOT remove any defensive comments.
+#   - Do NOT replace it with "for file in ${selected}" (word splitting bug).
+#   - Do NOT use process substitution or other bashisms.
+#   - This function must remain POSIX sh compatible (dash, ash, busybox, etc.).
+#
+#   Past AIs have repeatedly broken this exact function by "cleaning it up".
+#   Any such change will cause raw_lines to stay as "" and break the prompt.
+#   Preserve the anti-subshell pattern at all costs.
+#
+# Portability:
+#   Must work on both GNU sed (Linux) and BSD sed (macOS) for escaping.
+#
+# Last reviewed & hardened: April 2026
+# =============================================================================
+write_prompt_to_file() {
+    local prompt_file="$1"
+    local owner="$2"
+    local repo="$3"
+    local tagged_commit="$4"
+    local selected="$5"
+    local tag="$6"
+    local commit="$7"
+    local owner_repo="$8"
+
+    volatile_dir=$(resolve_storage)
+    mkdir -p "${volatile_dir}" || die "Cannot create volatile storage ${volatile_dir}"
+    
+    # BETTER: Use temporary file to avoid all subshell issues
+    tmp_raw=$(mktemp -t ${APP_NAME}_raw.XXXXXX)
+    printf '%s' "${selected}" > "$tmp_raw"
+
+    raw_lines=""
+    while IFS= read -r file || [ -n "$file" ]; do
+        [ -z "${file}" ] && continue
+        clean_file=$(echo "${file}" | sed 's#^\./##')
+        raw_url="https://raw.githubusercontent.com/${owner}/${repo}/${tagged_commit}/${clean_file}"
+        
+        if [ -z "$raw_lines" ]; then
+            raw_lines="${raw_url}"
+        else
+            raw_lines="${raw_lines}
+${raw_url}"
+        fi
+
+    done < "$tmp_raw"
+    rm -f "$tmp_raw"
+
+    info "Final raw_lines before prompt: '$raw_lines'"
+
+    local prompt_content
+    prompt_content=$(cat <<EOF
+Would you please do a review and security inspection of this version and tag ${tag}.
+Such that this conversation is used to placed to README.md for recommendation from grok.
+
+https://github.com/${owner_repo} 
+
+source code, with tag ${tag}, tagged commit: ${tagged_commit}, rev-parse HEAD: ${commit}
+
+${raw_lines}
+EOF
+)
+
+    printf '%s' "${prompt_content}" > "${prompt_file}"
+}
+
+# =============================================================================
+# display_prompt – Show final prompt to user
+# =============================================================================
+#
+# General Purpose:
+#   Displays the generated prompt and success message (interactive mode only).
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+#
+# Last reviewed: April 2026
+# =============================================================================
+display_prompt() {
+    local prompt_file="$1"
+
+    success "PROMPT GENERATED and saved to volatile storage:"
+    plain "   ${prompt_file}"
+    plain ""
+    plain "=== PROMPT CONTENT ==="
+    cat "${prompt_file}"
+    plain ""
+    plain "===================================================="
+    info "You can now copy the content above and paste it directly to Grok."
+    info "The file is stored in volatile storage and may disappear on reboot."
+}
+
+# =============================================================================
+# cmd_start – Core functionality with improved tag handling
+# =============================================================================
+#
+# General Purpose:
+#   Generate Grok code review prompt from current git repository with
+#   smart tag detection and correct tagged commit resolution.
+#
+# Why we added get_tagged_commit() call here (CIAO reasoning):
+#   - Previous behavior caused mismatch: tag 1.3.2 shown but HEAD commit used.
+#   - Now we clearly distinguish "Commit (HEAD)" from "Tagged Commit".
+#   - Raw file URLs now point to the exact tagged commit so Grok reviews the released version.
+#   - Maintains full original logic and all edge-case handling.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY ANY PART OF THIS FUNCTION !!!
+#   The defensive tag + commit logic must stay loud and explicit.
+#
+# Last reviewed & polished: April 2026
+# =============================================================================
+# =============================================================================
+# cmd_start – Core functionality with improved tag handling
+
+cmd_start() {
+    info "=== ${APP_NAME} start ==="
+
+    if [ "${TTY}" -eq 0 ]; then
+        info "Non-interactive mode detected: auto-selecting all source files"
+    fi
+
+    # Early .git check — fixed for non-interactive / JSON mode
+    if [ ! -d ".git" ]; then
+        warn "No .git directory found in current location."
+        if [ "${TTY}" -eq 0 ] || [ "${JSON_OUTPUT}" -eq 1 ]; then
+            info "Continuing anyway in non-interactive/JSON mode..."
+        else
+            printf "\nContinue anyway? (y/n): "
+            read -r continue_git
+            case "${continue_git}" in [nN]*) die "Operation cancelled." ;; esac
+        fi
+    fi
+
+    if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        die "Not inside a valid git repository."
+    fi
+
+    remote_url=$(git config --get remote.origin.url 2>/dev/null || git config --get-regexp '^remote\..*\.url' | head -1 | cut -d' ' -f2)
+    [ -z "${remote_url}" ] && die "No git remote found."
+
+    owner_repo=$(echo "${remote_url}" | sed 's#.*github.com[/:]\([^/]\+/[^/.]\+\).*#\1#')
+    owner=$(echo "${owner_repo}" | cut -d'/' -f1)
+    repo=$(echo "${owner_repo}" | cut -d'/' -f2)
+
+    commit=$(git rev-parse HEAD)
+
+    # Tag detection
+    git_tag_detection "${commit}" "${owner_repo}"
+
+    # Make variables available
+    tag="${TAG}"
+    tagged_commit="${TAGGED_COMMIT}"
+
+    if [ "${JSON_OUTPUT}" -eq 0 ]; then
+        plain "Repository     : https://github.com/${owner_repo}"
+        plain "Commit (HEAD)  : ${commit}"
+        plain "Tag            : ${tag}"
+        plain "Tagged Commit  : ${tagged_commit}"
+    fi
+
+    # Find files
+    find_candidate_files
+    
+    # File selection
+    selected=""
+    if [ "${JSON_OUTPUT}" -eq 1 ] || [ "${TTY}" -eq 0 ]; then
+        selected=$(cat "${candidates_file}")
+        info "Auto-selected all source files"
+    else
+        remaining="${candidates_file}"
+        while true; do
+            plain ""
+            plain "Available source files:"
+            nl "${remaining}" | sed 's/^\s*\([0-9]\+\)\s*/  \1. /'
+
+            printf "\nEnter number(s) to select (space/comma), 'all', or 'done': "
+            read -r choice
+
+            case "${choice}" in
+                "done"|"") break ;;
+                "all") new_selected=$(cat "${remaining}") ;;
+                *)
+                    new_selected=""
+                    for num in $(echo "${choice}" | tr ',' ' '); do
+                        if [ "${num}" -gt 0 ] 2>/dev/null; then
+                            file=$(sed -n "${num}p" "${remaining}")
+                            [ -n "${file}" ] && new_selected="${new_selected}${file}\n"
+                        fi
+                    done
+                    ;;
+            esac
+
+            if [ -n "${new_selected}" ]; then
+                selected="${selected}${new_selected}"
+                printf '%b' "${selected}" | sort > "${remaining}.selected"
+                sort "${remaining}" > "${remaining}.all"
+                comm -23 "${remaining}.all" "${remaining}.selected" > "${remaining}.tmp"
+                mv "${remaining}.tmp" "${remaining}"
+                rm -f "${remaining}.selected" "${remaining}.all"
+            fi
+
+            if [ -s "${remaining}" ]; then
+                printf "Add more files? (y/n): "
+                read -r more
+                case "${more}" in [nN]*) break ;; esac
+            else
+                break
+            fi
+        done
+
+        if [ -z "${selected}" ]; then
+            die "No files were selected"
+        fi
+
+        plain ""
+        plain "=== FINAL SELECTED FILES ==="
+        printf '%b' "${selected}" | nl
+        printf "\nProceed with these files? (y/n): "
+        read -r confirm
+        case "${confirm}" in [nN]*) die "Selection cancelled by user" ;; esac
+    fi
+
+    # Generate prompt
+    prompt_file="${volatile_dir:-$(resolve_storage)}/${APP_NAME}_prompt_$(date +%s).txt"
+    write_prompt_to_file "${prompt_file}" "${owner}" "${repo}" "${tagged_commit}" "${selected}" "${tag}" "${commit}" "${owner_repo}"
+    info 
+    if [ "${JSON_OUTPUT}" -eq 1 ]; then
+        prompt_content=$(cat "${prompt_file}" |sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')
+        output_json "success" "Prompt generated successfully" \
+            "prompt_file" "${prompt_file}" \
+            "repository" "https://github.com/${owner_repo}" \
+            "commit" "${commit}" \
+            "tag" "${tag}" \
+            "tagged_commit" "${tagged_commit} " \
+            "files_count" "$(printf '%b' "${selected}" | grep -c '^')" \
+            "prompt" "${prompt_content}"
+    else
+        display_prompt "$prompt_file"
+    fi
+}
+
+# =============================================================================
+# Single Entry Point: main()
+# =============================================================================
+main() {
+    if [ ! -f "$0" ] || [ -z "${0##*sh}" ] || [ "${FORCE_REINSTALL}" = "1" ]; then
+        if [ "${JSON_OUTPUT}" -eq 1 ] || [ "${QUIET}" -eq 1 ] || [ "${TTY}" -eq 0 ]; then
+            info "Running in non-interactive mode → performing silent installation"
+            perform_install
+            exit 0
+        else
+            plain ""
+            plain "${APP_NAME} is not installed yet."
+            printf "Would you like to install it now? (y/N): "
+            read -r answer
+            case "${answer}" in
+                [yY]|[yY][eE][sS])
+                    perform_install
+                    ;;
+                *)
+                    plain "Installation cancelled by user."
+                    exit 0
+                    ;;
+            esac
+        fi
+        exit 0
+    fi
+
+    cmd="start"
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --quiet|-q) QUIET=1 ;;
+            --json)     JSON_OUTPUT=1; QUIET=1 ;;
+            --*)        ;;
+            -*)         ;;
+            *)          cmd="$1" ;;
+        esac
+        shift
+    done
+
+    [ "${JSON_OUTPUT}" -eq 0 ] && [ "${QUIET}" -eq 0 ] && [ "${TTY}" -eq 1 ] && COLOR=1
+
+    case "${cmd}" in
+        about)       cmd_about ;;
+        self-update) cmd_self_update ;;
+        help|--help|-h) cmd_help ;;
+        start)       cmd_start ;;
+        *)
+            if [ "${JSON_OUTPUT}" -eq 1 ]; then
+                output_json_error "Unknown command: ${cmd}"
+            else
+                error "Unknown command: ${cmd}"
+                plain "Run '${APP_NAME} help' for usage."
+            fi
+            exit 1
+            ;;
+    esac
+
+    exit 0
+}
+
+# =============================================================================
+# Invoke the single entry point
+# =============================================================================
+main "$@"
