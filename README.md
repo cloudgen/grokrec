@@ -6,6 +6,8 @@
 [![Shell](https://img.shields.io/badge/Shell-POSIX%20sh-orange?style=flat-square)]()
 [![Made with CIAO](https://img.shields.io/badge/Made%20with%20❤️-CIAO-00AEEF?style=flat-square)](https://github.com/cloudgen/ciao)
 
+Official recommendation from [grok](https://grok.com/c/285af1c9-b015-45e0-85a6-bf4832f8c6f5?rid=694a559c-5444-4d93-8530-9cfc203e4c6b)
+
 **CIAO-defensive GitHub source-code review prompt generator**  
 *One-file POSIX shell script. Zero dependencies except `git` + `curl` + coreutils.*
 
