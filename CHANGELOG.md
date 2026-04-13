@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ## [2.6.0] - 2026-04
 
 ### Added
-- Significantly improved `cmd_help()` and `cmd_about()` functions for much better usability (modeled after `pomo`)
+- Significantly improved `cmd_help() --> show_help_grokrec()` and `cmd_about() --> show_about_grokrec()` functions for much better usability (modeled after `pomo`)
 - Detailed diagnostic output in `about` (storage directory, clearer installation status, next-step commands)
 - Stronger defensive comment blocks across multiple functions to better protect against AI simplification tendencies
 - Explicit warnings about root vs non-root, interactive vs non-interactive modes, `--quiet` respect, and battle-field tested logic (especially `perform_self_install`, `is_installed`, `get_installed_version`, `version_check`, `self_update`, `self_uninstall`, `resolve_storage`)
