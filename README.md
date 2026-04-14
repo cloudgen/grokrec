@@ -1,6 +1,6 @@
 # grokrec
 
-[![Version](https://img.shields.io/badge/Version-2.6.0-blue?style=flat-square)](https://github.com/cloudgen/grokrec)
+[![Version](https://img.shields.io/badge/Version-2.7.0-blue?style=flat-square)](https://github.com/cloudgen/grokrec)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 [![CIAO](https://img.shields.io/badge/Philosophy-CIAO%20(Caution%20%E2%80%A2%20Intentional%20%E2%80%A2%20Anti--fragile%20%E2%80%A2%20Over--engineered)-purple.svg)](https://github.com/cloudgen/ciao)
 [![Shell](https://img.shields.io/badge/Shell-POSIX%20sh-orange?style=flat-square)]()
@@ -13,7 +13,7 @@
 
 ## What is grokrec?
 
-`grokrec` is a **CIAO-compliant** utility that instantly generates a high-quality, structured prompt for **Grok** (built by xAI) to perform a professional code review and security inspection of your Git repository at a specific tagged version.
+`grokrec` is a **CIAO-compliant** utility that instantly generates a high-quality, structured prompt for **Grok** (built by xAI) to perform a professional code review and security inspection of your Git repository at a **specific tagged version**.
 
 It intelligently detects the current tag, resolves the **exact tagged commit SHA** (even when `HEAD` is ahead of the tag), supports interactive or non-interactive file selection, and outputs a ready-to-paste prompt with correct `raw.githubusercontent.com` links pointing to the released version.
 
@@ -41,13 +41,14 @@ A strong real-world example is the official Grok review of **[pomo v1.4.0](https
 ## Features
 
 - Fully **CIAO-compliant** with loud defensive guards (`!!! DO NOT MODIFY OR SIMPLIFY !!!`)
-- Correct tagged commit resolution (`get_tagged_commit()`)
+- **Accurate Tagged Commit Resolution** (`get_tagged_commit()` with multi-layered fallback)
+- **Robust Semantic Version Comparison** (`version_gt()`) — prevents incorrect downgrades during development
 - Interactive file selection + fully non-interactive / JSON mode
 - Self-update and self-uninstall commands (battle-field tested)
 - Strict root vs non-root handling
 - Volatile storage preference (`/dev/shm` → `/tmp`)
 - Full respect for `--quiet` and `--json`
-- Improved help and about commands (v2.6.0)
+- Improved help and about commands
 
 ---
 
@@ -67,10 +68,11 @@ curl -fsSL https://raw.githubusercontent.com/cloudgen/grokrec/main/grokrec | sud
 
 ```bash
 cd /path/to/your/project
-grokrec                    # interactive mode (file selection)
-grokrec --json             # machine-readable output
+
+grokrec                    # interactive mode (recommended)
+grokrec --json             # machine-readable output (for scripting)
 grokrec help               # detailed help
-grokrec about              # diagnostics (installation, shell, storage, etc.)
+grokrec about              # diagnostics (version, install status, shell, storage, etc.)
 grokrec self-update        # update to latest version
 grokrec self-uninstall     # clean removal
 ```
@@ -103,7 +105,7 @@ Every critical function contains explicit purpose, warnings, and guards against 
 
 ## Related Projects
 
-- [pomo](https://github.com/wilgat/pomo) — CIAO-based Pomodoro timer
+- [pomo](https://github.com/Wilgat/pomo) — CIAO-based Pomodoro timer
 - [SyncPrjs](https://github.com/Wilgat/SyncPrjs) — CIAO-powered project manager
 
 ---
