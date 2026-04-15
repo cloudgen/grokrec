@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Major Improvements
 - Add more file type in filter.
+- add --ciao flag to let grok to check against CIAO principles.
 
 ## [2.7.0] - 2026-04-14 (CIAO Edition)
 

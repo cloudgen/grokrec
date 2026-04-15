@@ -191,10 +191,10 @@ fi
 
 # ----------------------------- Flags & Environment ---------------------------
 : "{$QUIET:=0}"
-"{$JSON:=0}"
-TTY=0
-COLOR=0
-CIAO_CHECK=0
+: "{$JSON:=0}"
+: "${TTY:=0}"
+: "${COLOR:=0}"
+: "${CIAO_CHECK:=0}"
 
 # Early TTY detection
 [ -t 0 ] && [ -t 1 ] && TTY=1
@@ -1814,8 +1814,8 @@ find_candidate_files() {
         info "Found src/ directory – searching only inside it"
         find "src" -type f \
             ! -name "*.md" ! -name "*.ini" ! -name "*.sh" ! -name "*.xml" ! -name "*.txt" ! -name "*.h" \
-            ! -name "*.conf*" ! -name "*.am" ! -name "*.ac"! -name "PKG-INFO" ! -name "setup.py" \
-            ! -name "*.env*" ! -name "*.mkv" ! -name "*.webm"! -name "*.pdf" ! -name "*.ht*" ! -name "*.7z" \
+            ! -name "*.conf*" ! -name "*.am" ! -name "*.ac" ! -name "PKG-INFO" ! -name "setup.py" \
+            ! -name "*.env*" ! -name "*.mkv" ! -name "*.webm" ! -name "*.pdf" ! -name "*.ht*" ! -name "*.7z" \
             ! -name "*.jp*" ! -name "*.bak" ! -name "*.png" ! -name "*.gif" ! -name "LICENSE*" \
             ! -name "*.lst" ! -name "*.css" ! -name "*.yml" ! -name "*.class" ! -name "*.woff*" \
             ! -name "*.jar" ! -name "*.ttf" ! -name "*.properties" ! -name "*.ico" ! -name "*.o" \
@@ -1831,8 +1831,8 @@ find_candidate_files() {
         info "No src/ directory – searching entire repository"
         find . -type f \
             ! -name "*.md" ! -name "*.ini" ! -name "*.sh" ! -name "*.xml" ! -name "*.txt" ! -name "*.h" \
-            ! -name "*.conf*" ! -name "*.am" ! -name "*.ac"! -name "PKG-INFO" ! -name "setup.py" \
-            ! -name "*.env*" ! -name "*.mkv" ! -name "*.webm"! -name "*.pdf" ! -name "*.ht*" ! -name "*.7z" \
+            ! -name "*.conf*" ! -name "*.am" ! -name "*.ac" ! -name "PKG-INFO" ! -name "setup.py" \
+            ! -name "*.env*" ! -name "*.mkv" ! -name "*.webm" ! -name "*.pdf" ! -name "*.ht*" ! -name "*.7z" \
             ! -name "*.jp*" ! -name "*.bak" ! -name "*.png" ! -name "*.gif" ! -name "LICENSE*" \
             ! -name "*.lst" ! -name "*.css" ! -name "*.yml" ! -name "*.class" ! -name "*.woff*" \
             ! -name "*.jar" ! -name "*.ttf" ! -name "*.properties" ! -name "*.ico" ! -name "*.o" \
@@ -1920,11 +1920,14 @@ ${raw_url}"
     rm -f "$tmp_raw"
 
     info "Final raw_lines before prompt: '$raw_lines'"
-
+    if [ "${CIAO_CHECK}" -eq 1 ]; then
+        addition="In addition, please review the program using CIAO defensive principles https://github.com/cloudgen/ciao . "
+    else
+        addition=" The project details will be included. "
+    fi
     local prompt_content
     prompt_content=$(cat <<EOF
-Would you please do a review and security inspection of this version and tag ${tag}.
-So that this conversation is used to placed to README.md for recommendation from grok.
+Would you please do a review and security inspection of this version and tag ${tag}.${addition}So that this conversation is used to placed to README.md for recommendation from grok.
 
 https://github.com/${owner_repo} 
 
