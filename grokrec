@@ -1,6 +1,6 @@
 #!/bin/sh
 # =============================================================================
-# grokrec – version 2.7.0 (CIAO edition)
+# grokrec – version 2.7.1 (CIAO edition)
 # =============================================================================
 #
 # GrokRecommendation – CIAO-defensive GitHub source-code review prompt generator
@@ -152,7 +152,7 @@
 
 # ----------------------------- Project Constants -----------------------------
 APP_NAME="grokrec"
-VERSION="2.7.0"
+VERSION="2.7.1"
 DESCRIPTION="${APP_NAME} – CIAO-defensive prompt generator for Grok code reviews and recommendations"
 
 # -------- Repository source (for self-update) -------------------------------
@@ -190,10 +190,11 @@ if [ -z "${IS_ROOT:-}" ]; then
 fi
 
 # ----------------------------- Flags & Environment ---------------------------
-QUIET=0
-JSON=0
+: "{$QUIET:=0}"
+"{$JSON:=0}"
 TTY=0
 COLOR=0
+CIAO_CHECK=0
 
 # Early TTY detection
 [ -t 0 ] && [ -t 1 ] && TTY=1
@@ -1812,15 +1813,37 @@ find_candidate_files() {
     if [ -d "src" ]; then
         info "Found src/ directory – searching only inside it"
         find "src" -type f \
-            ! -name "*.md" ! -name "*.ini" ! -name "*.sh" ! -name "*.xml" ! -name "*.txt" ! -name "PKG-INFO" ! -name "setup.py" \
-            ! -path "*/.git/*" ! -path "*/node_modules/*" ! -path "*/venv/*" \
-            ! -path "*/__pycache__/*" > "${candidates_file}"
+            ! -name "*.md" ! -name "*.ini" ! -name "*.sh" ! -name "*.xml" ! -name "*.txt" ! -name "*.h" \
+            ! -name "*.conf*" ! -name "*.am" ! -name "*.ac"! -name "PKG-INFO" ! -name "setup.py" \
+            ! -name "*.env*" ! -name "*.mkv" ! -name "*.webm"! -name "*.pdf" ! -name "*.ht*" ! -name "*.7z" \
+            ! -name "*.jp*" ! -name "*.bak" ! -name "*.png" ! -name "*.gif" ! -name "LICENSE*" \
+            ! -name "*.lst" ! -name "*.css" ! -name "*.yml" ! -name "*.class" ! -name "*.woff*" \
+            ! -name "*.jar" ! -name "*.ttf" ! -name "*.properties" ! -name "*.ico" ! -name "*.o" \
+            ! -name "*.phar" ! -name "*.*zip" ! -name "*.gz" ! -name "*.doc*" ! -name "*.xls*" \
+            ! -name "*.csv" ! -name "*.sql" ! -name "*.sqlite" ! -name "*.bat" ! -name "*.mp*" \
+            ! -name "*.exe" ! -name "*.cmd" ! -name "*.dll" ! -name "*.registry" ! -name "*.*ar" \
+            ! -name "*.svg" ! -name "*.ppt*" ! -name "*.bmp" ! -name "*.avi" ! -name "*.m4*" \
+            ! -name "*.iso" ! -name "*.sys*" ! -name "*.app" ! -name "*.wav*" ! -name "*.cfg" \
+            ! -path "*/.git/*" ! -path "*/node_modules/*" ! -path "*/venv/*" ! -path "*/*.egg-info/*" \
+            ! -path "*/build/*" ! -path "*/target/*" ! -path "*/docs/*" ! -path "*/__pycache__/*" \
+            > "${candidates_file}"
     else
         info "No src/ directory – searching entire repository"
         find . -type f \
-            ! -name "*.md" ! -name "*.ini" ! -name "*.sh" ! -name "*.xml" ! -name "*.txt" ! -name "PKG-INFO" ! -name "setup.py" \
+            ! -name "*.md" ! -name "*.ini" ! -name "*.sh" ! -name "*.xml" ! -name "*.txt" ! -name "*.h" \
+            ! -name "*.conf*" ! -name "*.am" ! -name "*.ac"! -name "PKG-INFO" ! -name "setup.py" \
+            ! -name "*.env*" ! -name "*.mkv" ! -name "*.webm"! -name "*.pdf" ! -name "*.ht*" ! -name "*.7z" \
+            ! -name "*.jp*" ! -name "*.bak" ! -name "*.png" ! -name "*.gif" ! -name "LICENSE*" \
+            ! -name "*.lst" ! -name "*.css" ! -name "*.yml" ! -name "*.class" ! -name "*.woff*" \
+            ! -name "*.jar" ! -name "*.ttf" ! -name "*.properties" ! -name "*.ico" ! -name "*.o" \
+            ! -name "*.phar" ! -name "*.*zip" ! -name "*.gz" ! -name "*.doc*" ! -name "*.xls*" \
+            ! -name "*.csv" ! -name "*.sql" ! -name "*.sqlite" ! -name "*.bat" ! -name "*.mp*" \
+            ! -name "*.exe" ! -name "*.cmd" ! -name "*.dll" ! -name "*.registry" ! -name "*.*ar" \
+            ! -name "*.svg" ! -name "*.ppt*" ! -name "*.bmp" ! -name "*.avi" ! -name "*.m4*" \
+            ! -name "*.iso" ! -name "*.sys*" ! -name "*.app" ! -name "*.wav*" ! -name "*.cfg" \
             ! -path "*/.git/*" ! -path "*/node_modules/*" ! -path "*/venv/*" ! -path "*/*.egg-info/*" \
-            ! -path "*/__pycache__/*" > "${candidates_file}"
+            ! -path "*/build/*" ! -path "*/target/*" ! -path "*/docs/*" ! -path "*/__pycache__/*" \
+            > "${candidates_file}"
     fi
 
     [ ! -s "${candidates_file}" ] && die "No source files found after filtering."
@@ -2197,6 +2220,7 @@ main_grokrec() {
             --force)        FORCE=1 ;;
             --force-user)   FORCE_USER=1 ;;
             --force-root)   FORCE_ROOT=1 ;;
+            --ciao)         CIAO_CHECK=1 ;;
             --help|-h)      cmd="help";;
             --*)            ;;
             -*)             ;;

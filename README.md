@@ -1,6 +1,6 @@
 # grokrec
 
-[![Version](https://img.shields.io/badge/Version-2.7.0-blue?style=flat-square)](https://github.com/cloudgen/grokrec)
+[![Version](https://img.shields.io/badge/Version-2.7.1-blue?style=flat-square)](https://github.com/cloudgen/grokrec)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 [![CIAO](https://img.shields.io/badge/Philosophy-CIAO%20(Caution%20%E2%80%A2%20Intentional%20%E2%80%A2%20Anti--fragile%20%E2%80%A2%20Over--engineered)-purple.svg)](https://github.com/cloudgen/ciao)
 [![Shell](https://img.shields.io/badge/Shell-POSIX%20sh-orange?style=flat-square)]()

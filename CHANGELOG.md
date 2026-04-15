@@ -4,6 +4,11 @@ All notable changes to **grokrec** will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [CIAO](https://github.com/cloudgen/ciao) principles.
 
+## [2.7.1] - 2026-04-15
+
+### Major Improvements
+- Add more file type in filter.
+
 ## [2.7.0] - 2026-04-14 (CIAO Edition)
 
 ### Major Improvements
