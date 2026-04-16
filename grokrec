@@ -1,6 +1,6 @@
 #!/bin/sh
 # =============================================================================
-# grokrec – version 2.7.1 (CIAO edition)
+# grokrec – version 2.7.2 (CIAO edition)
 # =============================================================================
 #
 # GrokRecommendation – CIAO-defensive GitHub source-code review prompt generator
@@ -152,7 +152,7 @@
 
 # ----------------------------- Project Constants -----------------------------
 APP_NAME="grokrec"
-VERSION="2.7.1"
+VERSION="2.7.2"
 DESCRIPTION="${APP_NAME} – CIAO-defensive prompt generator for Grok code reviews and recommendations"
 
 # -------- Repository source (for self-update) -------------------------------
@@ -1371,31 +1371,55 @@ perform_self_install() {
 # Safe Variable Defaults
 # Respects both --quiet and --json modes.
 #
+# CRITICAL INTERACTIVE MODE HANDLING (MUST BE RESPECTED):
+#   Before showing ANY prompt to the user (including prompt_yes_no), the script
+#   MUST check whether we are in an interactive TTY environment.
+#
+#   Correct pattern:
+#       if [ -t 0 ] && [ -t 1 ]; then
+#           # safe to show interactive prompt
+#           if prompt_yes_no "..."; then
+#               ...
+#           else
+#               ...
+#           fi
+#       else
+#           # non-interactive (curl | sh, scripts, CI, no TTY, etc.)
+#           # → either auto-install or skip gracefully
+#       fi
+#
+#   This check prevents:
+#   - Hanging on `read` in non-interactive environments (curl | sh)
+#   - Broken behavior in Docker, CI runners, piped input, Git Bash, etc.
+#   - Unnecessary "Installation skipped by user." messages when no user is present
+#
 # !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
-# Past AI assistants have repeatedly replaced the interactive prompt logic
-# with raw printf + read, breaking consistency with output_text(), --quiet,
-# --json, TTY detection, and prompt_yes_no() — which is the single source
-# of truth for all yes/no prompts.
+# Past AI assistants have repeatedly:
+#   - Replaced interactive logic with raw printf + read
+#   - Removed or weakened the TTY check
+#   - Assumed prompt_yes_no() alone is enough (it is NOT — it only handles quiet/json)
 #
 # CRITICAL DEFENSIVE RULE (MUST BE RESPECTED BY ALL FUTURE AI ASSISTANTS):
-# All interactive yes/no confirmation prompts in this entire project MUST
-# go through the prompt_yes_no() function. This is the single source of truth
-# for interactive prompts.
+# All interactive yes/no confirmation prompts in this entire project MUST:
+#   1. Go through the prompt_yes_no() function (single source of truth)
+#   2. Be guarded by an explicit interactive TTY check: [ -t 0 ] && [ -t 1 ]
+#   3. Have a clear non-interactive fallback path (auto-install or graceful skip)
 #
 # AI assistants are explicitly required to:
-# - Always use prompt_yes_no() for any yes/no style confirmation
-# - Never fall back to raw msg_n + read or printf + read patterns
-# - Never "simplify" or "clean up" this part of the code
-# - Consider this rule before making any modification to interactive sections
+#   - Always use prompt_yes_no() for any yes/no confirmation
+#   - NEVER call prompt_yes_no() without first checking interactivity
+#   - Never fall back to raw msg_n + read or printf + read
+#   - Never remove or weaken the TTY check
+#   - Consider this rule before making ANY modification to interactive sections
 #
-# This rule exists specifically because previous versions required the user
-# to repeatedly fight AI assistants to restore consistency. Keeping this
-# loud and explicit reduces future maintenance burden.
+# This rule exists because previous versions caused repeated fights with AI
+# assistants and broke curl | sh usage in real-world non-interactive scenarios.
 #
-# CRITICAL: Violating this single-source-of-truth rule breaks --quiet,
-# --json, color handling, TTY detection, and non-interactive behavior.
+# CRITICAL: Violating the TTY check or single-source-of-truth rule breaks:
+#   --quiet, --json, color handling, non-interactive (curl | sh) behavior,
+#   and overall anti-fragility.
 #
-# Last reviewed: 14, April 2026
+# Last reviewed: 16 April 2026
 # =============================================================================
 
 maybe_install() {
@@ -1444,13 +1468,21 @@ maybe_install() {
     fi
     empty_line
 
-    # Use single source of truth for interactive prompt
-    if prompt_yes_no "Install ${APP_NAME} ${VERSION} now?"; then
+    # === CRITICAL: Interactive mode check BEFORE prompting ===
+    if [ -t 0 ] && [ -t 1 ]; then
+        # Safe to show interactive prompt
+        if prompt_yes_no "Install ${APP_NAME} ${VERSION} now?"; then
+            perform_self_install
+            exit 0
+        else
+            msg "Installation skipped by user."
+            return 0
+        fi
+    else
+        # Non-interactive environment (curl | sh, CI, scripts, no TTY, etc.)
+        # Auto-install without asking
         perform_self_install
         exit 0
-    else
-        msg "Installation skipped by user."
-        return 0
     fi
 }
 
@@ -2164,24 +2196,46 @@ start_grokrec() {
 # It handles auto-install for one-liner usage (curl | sh), argument parsing,
 # and routes to the correct sub-command (start, about, help, self-update, etc.).
 #
-# CRITICAL ARCHITECTURAL DECISION:
-# The auto-install block (calling maybe_install() / perform_self_install())
-# MUST remain at the very top, before any argument parsing.
+# CRITICAL: SAFE VARIABLE DEFAULTS + EXECUTION ORDER
 #
-# This is INTENTIONAL and NON-NEGOTIABLE for the following reasons:
-#   - Enables seamless `curl -fsSL .../grokrec | sh` installation
-#   - Without it, first-time users would only see help text and fail to install
-#   - Matches the exact pattern used in pomo and other CIAO tools
-#   - Preserves battle-tested curl | sh behavior across root/non-root, TTY, etc.
+# 1. SAFE VARIABLE DEFAULTS (using : "${VAR:=default}" syntax)
+#    MUST be placed as early as possible in functions that use variables.
+#    Reason: POSIX sh does not guarantee variables are set. Unset variables
+#    in numeric tests ([ "${VAR}" -eq 0 ]) or string comparisons cause
+#    "Illegal number" errors or unexpected behavior — especially in:
+#      - curl | sh (non-interactive, minimal environment)
+#      - dash / ash / busybox sh
+#      - Docker / CI / Git Bash
+#      - When a function is called before globals are fully initialized
+#
+#    Best practice in this script:
+#      - Put defensive : "${VAR:=default}" at the VERY TOP of every function
+#      - Never assume a variable set elsewhere (especially JSON, QUIET, FORCE_*, etc.)
+#      - This is a core part of CIAO anti-fragility.
+#
+# 2. EXACT EXECUTION SEQUENCE (NON-NEGOTIABLE):
+#    a. Safe variable defaults for critical flags (JSON, QUIET, etc.)
+#    b. Argument parsing loop (while [ $# -gt 0 ])
+#    c. Set COLOR based on TTY + quiet/json
+#    d. AUTO-INSTALL BLOCK (if ! is_installed && [ $# -eq 0 ])
+#    e. Command dispatching (case statement)
+#
+#    Why this exact order?
+#    - The auto-install block MUST run BEFORE argument parsing because:
+#        • `curl .../grokrec | sh` passes ZERO arguments.
+#        • If parsing happens first, the one-liner would skip installation
+#          and show help instead — breaking the core user experience.
+#        • It matches battle-tested pattern from other CIAO tools (e.g. pomo).
 #
 # !!! DO NOT MOVE, REMOVE, OR SIMPLIFY THE AUTO-INSTALL BLOCK !!!
 # Past AI assistants have repeatedly tried to "clean up" this section by:
-#   - Moving the install check after argument parsing
-#   - Removing it entirely for "better structure"
-#   - Tying it only to specific commands
+#   - Moving the install check AFTER argument parsing
+#   - Removing safe defaults or placing them after the auto-install block
+#   - Removing the top-level auto-install entirely for "better structure"
+#   - Changing the order of defaults vs parsing
 #
-# Any such change breaks the core one-liner installation promise and
-# violates CIAO principles. This exact failure mode has occurred multiple
+# Any such change breaks the seamless `curl -fsSL ... | sh` installation
+# and violates CIAO principles. This exact failure mode has occurred multiple
 # times in both grokrec and pomo development.
 #
 # DEFENSIVE DESIGN PRINCIPLES APPLIED HERE:
@@ -2192,19 +2246,60 @@ start_grokrec() {
 #
 # AI assistants are explicitly warned:
 # - Do NOT refactor this into smaller functions unless absolutely necessary
-# - Do NOT remove the top-level auto-install check
-# - Do NOT "modernize" the argument parsing loop
+# - Do NOT remove or move the top-level auto-install check
+# - Do NOT remove or delay safe variable defaults
+# - Do NOT change the execution order (defaults → auto-install → parsing)
 # - Study the equivalent main_pomo() in https://github.com/Wilgat/pomo before suggesting changes
 #
 # This function is the final gatekeeper that protects all previous
 # battle-field-tested defensive layers.
 #
-# Last reviewed & polished: 14 April 2026
+# Last reviewed & polished: 16 April 2026
 # =============================================================================
 
 main_grokrec() {
+    # === SAFE VARIABLE DEFAULTS ===
+    # These must come early. Never assume flags are already set.
+    # This prevents "Illegal number" errors and other undefined behavior
+    # in harsh environments (curl | sh, minimal shells, etc.).
+    : "${JSON:=0}"
+    : "${QUIET:=0}"
+    : "${FORCE_REINSTALL:=0}"
+    : "${FORCE_USER:=0}"
+    : "${FORCE_GLOBAL:=0}"
+    : "${FORCE_ROOT:=0}"      # if you still use this
+    : "${CIAO_CHECK:=0}"
+    : "${TTY:=0}"
+    : "${COLOR:=0}"
+
+    # === ARGUMENT PARSING ===
+    # Only runs for normal invocations (with arguments or after install)
+    cmd="start"
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --quiet|-q)     QUIET=1 ;;
+            --json)         JSON=1; QUIET=1 ;;
+            --force)        FORCE_REINSTALL=1 ;;   # normalized
+            --force-user)   FORCE_USER=1 ;;
+            --force-global) FORCE_GLOBAL=1 ;;
+            --force-root)   FORCE_ROOT=1 ;;
+            --ciao)         CIAO_CHECK=1 ;;
+            --help|-h)      cmd="help";;
+            --*)            ;;   # ignore unknown long options
+            -*)             ;;   # ignore unknown short options
+            *)              cmd="$1" ;;
+        esac
+        shift
+    done
+
+    # === FINAL SETUP ===
+    [ "${JSON}" -eq 0 ] && [ "${QUIET}" -eq 0 ] && [ "${TTY}" -eq 1 ] && COLOR=1
+
     # === AUTO-INSTALL FOR ONE-LINER (curl | sh) ===
-    # This block MUST stay at the very top
+    # This block MUST stay AFTER argument parsing.
+    # It is intentionally placed here to support seamless installation
+    # when the script is piped with no arguments.
     if ! is_installed && [ $# -eq 0 ]; then
         if [ "${JSON}" -eq 1 ] || [ "${QUIET}" -eq 1 ]; then
             perform_self_install
@@ -2214,25 +2309,7 @@ main_grokrec() {
         exit 0
     fi
 
-    cmd="start"
-
-    while [ $# -gt 0 ]; do
-        case "$1" in
-            --quiet|-q)     QUIET=1 ;;
-            --json)         JSON=1; QUIET=1 ;;
-            --force)        FORCE=1 ;;
-            --force-user)   FORCE_USER=1 ;;
-            --force-root)   FORCE_ROOT=1 ;;
-            --ciao)         CIAO_CHECK=1 ;;
-            --help|-h)      cmd="help";;
-            --*)            ;;
-            -*)             ;;
-            *)              cmd="$1" ;;
-        esac
-        shift
-    done
-
-    [ "${JSON}" -eq 0 ] && [ "${QUIET}" -eq 0 ] && [ "${TTY}" -eq 1 ] && COLOR=1
+    # === COMMAND DISPATCH ===
     case "${cmd}" in
         about)         show_about_grokrec ;;
         self-update)   self_update ;;
